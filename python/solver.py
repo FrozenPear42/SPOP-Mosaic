@@ -4,7 +4,8 @@ import json
 from enum import Enum
 from dataclasses import dataclass
 import svgwrite
-
+import itertools
+import copy
 
 class CellState(Enum):
     UNTOUCHED = 0
@@ -121,10 +122,9 @@ def get_cell(board, x, y):
         return None
     return board[x][y]
 
-def main():
-    puzzle_path = sys.argv[1]
-    puzzle = read_puzzle(puzzle_path)
-    board = convert_puzzle_to_board(puzzle)
+
+# returns (board, solved)
+def solve_puzzle(board, iter_cnt):
     height = len(board)
     width = len(board[0])
 
@@ -134,12 +134,9 @@ def main():
             if board[x][y].value != None:
                 nice_cells.append((x,y, board[x][y].value))
 
-    iter_cnt = 0
     updated = True
     while updated:
-        print("\niteration")
-        print_board(board)
-        draw_board(board, "iter_"+str(iter_cnt))
+        print("\niteration " + str(iter_cnt))
         iter_cnt += 1
 
         updated = False
@@ -163,7 +160,11 @@ def main():
                             filled += 1
 
             # print((x, y, cell.value, cell.state, neighbor_cells, empty, filled))
-            
+            if cell.value < filled or 9 - cell.value < empty:
+                print("cell is invalid, returning: " + str((x, y)))
+                return (board, False, iter_cnt)
+
+
             # fill all nighbor (4 in corner; 6 on edge; 9)
             if neighbor_cells == cell.value:
                 fill_board(board, (x, y), CellState.FILLED)
@@ -237,11 +238,85 @@ def main():
                     
                 new_nice_cells.append(c) 
         nice_cells = new_nice_cells
+        print_board(board)
+        draw_board(board, "iter_"+str(iter_cnt))
+
+    if len(nice_cells) == 0:
+            return (board, True, iter_cnt)
+    
+
+    
+        #branch: generate all boards for nice cell
+    c = nice_cells[0]
+    x = c[0]
+    y = c[1]
+    cell = board[x][y]
+    print("branching at: " + str((x, y)))
+
+    empty = []
+    filled = []
+    untouched = []
+    for sx in [x-1, x, x+1]:
+        for sy in [y-1, y, y+1]:
+            if sx < 0 or sx >= width or sy < 0 or sy >= height:
+                pass
+            else:
+                if board[sx][sy].state == CellState.EMPTY:
+                    empty.append((sx, sy))
+                elif board[sx][sy].state == CellState.FILLED:
+                    filled.append((sx, sy))
+                elif board[sx][sy].state == CellState.UNTOUCHED:
+                    untouched.append((sx, sy))
+    if len(filled) >= len(empty):
+        available = cell.value - len(filled)
+        for comb in itertools.combinations(untouched, available):
+            new_board = copy.deepcopy(board)
+            for cords in comb:
+                new_board[cords[0]][cords[1]].state = CellState.FILLED
+            print("\nbranch")
+            print_board(new_board)
+            draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
+            result_board, solved, iter_cnt = solve_puzzle(new_board, iter_cnt)
+            if solved:
+                return (result_board, True, iter_cnt)
+    else:    
+        available = 9 - cell.value - len(empty)
+        for comb in itertools.combinations(untouched, available):
+            new_board = copy.deepcopy(board)
+            for cords in comb:
+                new_board[cords[0]][cords[1]].state = CellState.EMPTY
+            print("\nbranch")
+            print_board(new_board)
+            draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
+            result_board, solved, iter_cnt  = solve_puzzle(new_board, iter_cnt)
+            if solved:
+                return (result_board, True, iter_cnt)
+
+    return (board, False, iter_cnt)
+        # possible cut for repeated branches
+
+
+def main():
+    puzzle_path = sys.argv[1]
+    puzzle = read_puzzle(puzzle_path)
+    board = convert_puzzle_to_board(puzzle)
+    height = len(board)
+    width = len(board[0])
+
+    nice_cells = []
+    for y in range(height):
+        for x in range(width):
+            if board[x][y].value != None:
+                nice_cells.append((x,y, board[x][y].value))
+
+
+    draw_board(board, "input")
+    result_board,solved, _ = solve_puzzle(board, 1)
 
     print("\nresult")
-    print_board(board)
-    draw_board(board, "final")
-
+    print_board(result_board)
+    draw_board(result_board, "final")
+    print(solved)
 if __name__ == "__main__":
     main()    
 
