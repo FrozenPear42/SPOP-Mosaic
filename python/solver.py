@@ -159,7 +159,6 @@ def solve_puzzle(board, iter_cnt):
                         elif board[sx][sy].state == CellState.FILLED:
                             filled += 1
 
-            # print((x, y, cell.value, cell.state, neighbor_cells, empty, filled))
             if cell.value < filled or 9 - cell.value < empty:
                 print("cell is invalid, returning: " + str((x, y)))
                 return (board, False, iter_cnt)
@@ -189,51 +188,58 @@ def solve_puzzle(board, iter_cnt):
                 # check if any known solution met (pairs )
                 left_cell = get_cell(board, x-1, y)
                 right_cell = get_cell(board, x+1, y)
-                down_cell = get_cell(board, x, y-1)
-                up_cell = get_cell(board, x, y+1)
+                up_cell = get_cell(board, x, y-1)
+                down_cell = get_cell(board, x, y+1)
 
 
                 if left_cell != None and left_cell.value != None and cell.value - left_cell.value >= 3:
                     filled = fill_cells(board, [(x+1, y-1), (x+1, y),  (x+1, y+1)], CellState.FILLED)
-                    print("filled right column: " + str((x, y)))
+                    if filled:
+                        print("filled right column: " + str((x, y)))
                     updated = updated or filled
 
                 if right_cell != None and right_cell.value != None and cell.value - right_cell.value >= 3:
                     filled = fill_cells(board, [(x-1, y-1), (x-1, y),  (x-1, y+1)], CellState.FILLED)
-                    print("filled left column: " + str((x, y)))
-                    updated = updated or filled
-                    
-                if down_cell != None and down_cell.value != None and cell.value - down_cell.value >= 3:
-                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.FILLED)
-                    print("filled upper row: " + str((x, y)))
+                    if filled:
+                        print("filled left column: " + str((x, y)))
                     updated = updated or filled
                     
                 if up_cell != None and up_cell.value != None and cell.value - up_cell.value >= 3:
+                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.FILLED)
+                    if filled:
+                        print("filled down row: " + str((x, y)))
+                    updated = updated or filled
+                    
+                if down_cell != None and down_cell.value != None and cell.value - down_cell.value >= 3:
                     filled = fill_cells(board, [(x-1, y-1), (x, y-1),  (x+1, y-1)], CellState.FILLED)
-                    print("filled down row: " + str((x, y)))
+                    if filled:
+                        print("filled upper row: " + str((x, y)))
                     updated = updated or filled  
 
                 # TODO: add corner cases
                 
                 # todo: add same numbers on edge cases
-                if y == 1 and up_cell != None and up_cell.value != None and cell.value == up_cell.value:
+                if y == 1 and down_cell != None and down_cell.value != None and cell.value == down_cell.value:
                     filled = fill_cells(board, [(x-1, y-1), (x, y-1),  (x+1, y-1)], CellState.EMPTY)
-                    print("emptied down row: " + str((x, y)))
-                    updated = updated or filled  
-
-                if y == height-2 and down_cell != None and down_cell.value != None and cell.value == down_cell.value:
-                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.EMPTY)
                     print("emptied upper row: " + str((x, y)))
                     updated = updated or filled  
 
+                if y == height-2 and up_cell != None and up_cell.value != None and cell.value == up_cell.value:
+                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.EMPTY)
+                    if filled:
+                        print("emptied lower row: " + str((x, y)))
+                    updated = updated or filled
+                      
                 if x == 1 and left_cell != None and left_cell.value != None and cell.value == left_cell.value:
                     filled = fill_cells(board, [(x+1, y-1), (x+1, y),  (x+1, y+1)], CellState.EMPTY)
-                    print("emptied right column: " + str((x, y)))
+                    if filled:
+                        print("emptied right column: " + str((x, y)))
                     updated = updated or filled  
 
                 if x == width-2 and right_cell != None and right_cell.value != None and cell.value == right_cell.value:
                     filled = fill_cells(board, [(x-1, y-1), (x-1, y),  (x-1, y+1)], CellState.EMPTY)
-                    print("emptied left column: " + str((x, y)))
+                    if filled:
+                        print("emptied left column: " + str((x, y)))
                     updated = updated or filled  
                     
                 new_nice_cells.append(c) 
@@ -280,12 +286,12 @@ def solve_puzzle(board, iter_cnt):
             if solved:
                 return (result_board, True, iter_cnt)
     else:    
-        available = 9 - cell.value - len(empty)
+        available = (len(empty) + len(filled) + len(untouched)) - cell.value - len(empty)
         for comb in itertools.combinations(untouched, available):
             new_board = copy.deepcopy(board)
             for cords in comb:
                 new_board[cords[0]][cords[1]].state = CellState.EMPTY
-            print("\nbranch")
+            print("\nbranch " + str(iter_cnt))
             print_board(new_board)
             draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
             result_board, solved, iter_cnt  = solve_puzzle(new_board, iter_cnt)
