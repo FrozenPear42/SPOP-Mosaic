@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import svgwrite
 import itertools
 import copy
+import time
+
 
 class CellState(Enum):
     UNTOUCHED = 0
@@ -59,24 +61,24 @@ def print_board(board):
 def draw_board(board, name):
     height = len(board)
     width = len(board[0])
-    size = 20
+    size = 30
 
     dwg = svgwrite.Drawing("out/" + name + ".svg", size=(width*size, height*size))
 
     for y in range(height):
         for x in range(width):
             group = dwg.g()
-            text_inset = (x*size + size/4, y*size + size - size/4)
+            text_inset = (x*size + size/3, y*size + size - size/3)
             if board[x][y].state == CellState.EMPTY:
-                group.add(dwg.rect((size*x,size*y), (size*(x+1), size*(y+1)), stroke="black", fill="gray"))
+                group.add(dwg.rect((size*x,size*y), (size, size), stroke="black", fill="gray"))
                 if board[x][y].value != None:
                     group.add(dwg.text(str(board[x][y].value), text_inset, fill="black"))
             elif board[x][y].state == CellState.FILLED:
-                group.add(dwg.rect((size*x,size*y), (size*(x+1), size*(y+1)), stroke="black", fill="black"))
+                group.add(dwg.rect((size*x,size*y), (size, size), stroke="black", fill="black"))
                 if board[x][y].value != None:
                     group.add(dwg.text(str(board[x][y].value), text_inset, fill="white"))
             else:
-                group.add(dwg.rect((size*x,size*y), (size*(x+1), size*(y+1)), stroke="black", fill="white"))
+                group.add(dwg.rect((size*x,size*y), (size, size), stroke="black", fill="white"))
                 if board[x][y].value != None:
                     group.add(dwg.text(str(board[x][y].value), text_inset, fill="black"))
             dwg.add(group)
@@ -123,8 +125,7 @@ def get_cell(board, x, y):
     return board[x][y]
 
 
-# returns (board, solved)
-def solve_puzzle(board, iter_cnt):
+def solve_puzzle(board):
     height = len(board)
     width = len(board[0])
 
@@ -132,11 +133,19 @@ def solve_puzzle(board, iter_cnt):
     for y in range(height):
         for x in range(width):
             if board[x][y].value != None:
-                nice_cells.append((x,y, board[x][y].value))
+                nice_cells.append((x,y, board[x][y].value)) 
+
+    return solver(board, nice_cells, 0)
+    
+
+# returns (board, solved, iter_cnt)
+def solver(board, nice_cells, iter_cnt):
+    height = len(board)
+    width = len(board[0])
 
     updated = True
     while updated:
-        print("\niteration " + str(iter_cnt))
+        #print("\niteration " + str(iter_cnt))
         iter_cnt += 1
 
         updated = False
@@ -160,29 +169,29 @@ def solve_puzzle(board, iter_cnt):
                             filled += 1
 
             if cell.value < filled or 9 - cell.value < empty:
-                print("cell is invalid, returning: " + str((x, y)))
+                #print("cell is invalid, returning: " + str((x, y)))
                 return (board, False, iter_cnt)
 
 
             # fill all nighbor (4 in corner; 6 on edge; 9)
             if neighbor_cells == cell.value:
                 fill_board(board, (x, y), CellState.FILLED)
-                print("filled cell (corner case): "+ str((x, y)))
+                #print("filled cell (corner case): "+ str((x, y)))
                 updated = True
             # empty all neighbor (0)
             elif cell.value == 0:
                 fill_board(board, (x, y), CellState.EMPTY)
                 updated = True
-                print("emptied cell (value 0): "+ str((x, y)))
+                #print("emptied cell (value 0): "+ str((x, y)))
             # if enough empty: fill rest
             elif empty == neighbor_cells - cell.value:
                 fill_board(board, (x, y), CellState.FILLED)
                 updated = True
-                print("filled cell (known all empty): " + str((x, y)))
+                #print("filled cell (known all empty): " + str((x, y)))
             # if enough filled: empty rest
             elif filled == cell.value:
                 fill_board(board, (x, y), CellState.EMPTY)
-                print("emptied cell (known all filled): " + str((x, y)))
+                #print("emptied cell (known all filled): " + str((x, y)))
                 updated = True
             else:
                 # check if any known solution met (pairs )
@@ -194,58 +203,58 @@ def solve_puzzle(board, iter_cnt):
 
                 if left_cell != None and left_cell.value != None and cell.value - left_cell.value >= 3:
                     filled = fill_cells(board, [(x+1, y-1), (x+1, y),  (x+1, y+1)], CellState.FILLED)
-                    if filled:
-                        print("filled right column: " + str((x, y)))
+                    #if filled:
+                        #print("filled right column: " + str((x, y)))
                     updated = updated or filled
 
                 if right_cell != None and right_cell.value != None and cell.value - right_cell.value >= 3:
                     filled = fill_cells(board, [(x-1, y-1), (x-1, y),  (x-1, y+1)], CellState.FILLED)
-                    if filled:
-                        print("filled left column: " + str((x, y)))
+                    #if filled:
+                        #print("filled left column: " + str((x, y)))
                     updated = updated or filled
                     
                 if up_cell != None and up_cell.value != None and cell.value - up_cell.value >= 3:
                     filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.FILLED)
-                    if filled:
-                        print("filled down row: " + str((x, y)))
+                    #if filled:
+                        #print("filled down row: " + str((x, y)))
                     updated = updated or filled
                     
                 if down_cell != None and down_cell.value != None and cell.value - down_cell.value >= 3:
                     filled = fill_cells(board, [(x-1, y-1), (x, y-1),  (x+1, y-1)], CellState.FILLED)
-                    if filled:
-                        print("filled upper row: " + str((x, y)))
+                    #if filled:
+                        #print("filled upper row: " + str((x, y)))
                     updated = updated or filled  
 
                 # TODO: add corner cases
                 
                 # todo: add same numbers on edge cases
-                if y == 1 and down_cell != None and down_cell.value != None and cell.value == down_cell.value:
-                    filled = fill_cells(board, [(x-1, y-1), (x, y-1),  (x+1, y-1)], CellState.EMPTY)
-                    print("emptied upper row: " + str((x, y)))
+                if y == 1 and up_cell != None and up_cell.value != None and cell.value == up_cell.value:
+                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.EMPTY)
+                    #print("emptied upper row: " + str((x, y)))
                     updated = updated or filled  
 
-                if y == height-2 and up_cell != None and up_cell.value != None and cell.value == up_cell.value:
-                    filled = fill_cells(board, [(x-1, y+1), (x, y+1),  (x+1, y+1)], CellState.EMPTY)
-                    if filled:
-                        print("emptied lower row: " + str((x, y)))
+                if y == height-2 and down_cell != None and down_cell.value != None and cell.value == down_cell.value:
+                    filled = fill_cells(board, [(x-1, y-1), (x, y-1),  (x+1, y-1)], CellState.EMPTY)
+                    #if filled:
+                        #print("emptied lower row: " + str((x, y)))
                     updated = updated or filled
                       
                 if x == 1 and left_cell != None and left_cell.value != None and cell.value == left_cell.value:
                     filled = fill_cells(board, [(x+1, y-1), (x+1, y),  (x+1, y+1)], CellState.EMPTY)
-                    if filled:
-                        print("emptied right column: " + str((x, y)))
+                    #if filled:
+                        #print("emptied right column: " + str((x, y)))
                     updated = updated or filled  
 
                 if x == width-2 and right_cell != None and right_cell.value != None and cell.value == right_cell.value:
                     filled = fill_cells(board, [(x-1, y-1), (x-1, y),  (x-1, y+1)], CellState.EMPTY)
-                    if filled:
-                        print("emptied left column: " + str((x, y)))
+                    #if filled:
+                        #print("emptied left column: " + str((x, y)))
                     updated = updated or filled  
                     
                 new_nice_cells.append(c) 
         nice_cells = new_nice_cells
-        print_board(board)
-        draw_board(board, "iter_"+str(iter_cnt))
+        #print_board(board)
+        #draw_board(board, "iter_"+str(iter_cnt))
 
     if len(nice_cells) == 0:
             return (board, True, iter_cnt)
@@ -257,8 +266,8 @@ def solve_puzzle(board, iter_cnt):
     x = c[0]
     y = c[1]
     cell = board[x][y]
-    print("branching at: " + str((x, y)))
-
+    #print("branching at: " + str((x, y)))
+    result_board = None
     empty = []
     filled = []
     untouched = []
@@ -273,32 +282,22 @@ def solve_puzzle(board, iter_cnt):
                     filled.append((sx, sy))
                 elif board[sx][sy].state == CellState.UNTOUCHED:
                     untouched.append((sx, sy))
-    if len(filled) >= len(empty):
-        available = cell.value - len(filled)
-        for comb in itertools.combinations(untouched, available):
-            new_board = copy.deepcopy(board)
-            for cords in comb:
-                new_board[cords[0]][cords[1]].state = CellState.FILLED
-            print("\nbranch")
-            print_board(new_board)
-            draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
-            result_board, solved, iter_cnt = solve_puzzle(new_board, iter_cnt)
-            if solved:
-                return (result_board, True, iter_cnt)
-    else:    
-        available = (len(empty) + len(filled) + len(untouched)) - cell.value - len(empty)
-        for comb in itertools.combinations(untouched, available):
-            new_board = copy.deepcopy(board)
-            for cords in comb:
-                new_board[cords[0]][cords[1]].state = CellState.EMPTY
-            print("\nbranch " + str(iter_cnt))
-            print_board(new_board)
-            draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
-            result_board, solved, iter_cnt  = solve_puzzle(new_board, iter_cnt)
-            if solved:
-                return (result_board, True, iter_cnt)
 
-    return (board, False, iter_cnt)
+    available = cell.value - len(filled)
+    for comb in itertools.combinations(untouched, available):
+        new_board = copy.deepcopy(board)
+        for cords in comb:
+            new_board[cords[0]][cords[1]].state = CellState.FILLED
+        #print("\nbranch")
+        #print_board(new_board)
+        #draw_board(new_board, "iter_"+str(iter_cnt)+"_branch")
+        sorted_cells = sorted(nice_cells, key = lambda p: (p[0] - x)**2 + (p[1] - y)**2)
+        result_board, solved, iter_cnt = solver(new_board, sorted_cells, iter_cnt)
+        if solved:
+            return (result_board, True, iter_cnt)
+
+
+    return (result_board, False, iter_cnt)
         # possible cut for repeated branches
 
 
@@ -309,20 +308,23 @@ def main():
     height = len(board)
     width = len(board[0])
 
-    nice_cells = []
-    for y in range(height):
-        for x in range(width):
-            if board[x][y].value != None:
-                nice_cells.append((x,y, board[x][y].value))
+    start_time = time.time()
 
 
     draw_board(board, "input")
-    result_board,solved, _ = solve_puzzle(board, 1)
+    result_board,solved, iterations = solve_puzzle(board)
+
+    elapsed_time = time.time() - start_time
+    print ('Execution time max: ' + str((elapsed_time)))
+
 
     print("\nresult")
     print_board(result_board)
     draw_board(result_board, "final")
     print(solved)
+    print(iterations)
+
+
 if __name__ == "__main__":
     main()    
 
