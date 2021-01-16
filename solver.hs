@@ -7,6 +7,10 @@ module Solver where
 -- |
 -- |
 -- y
+
+-- (y, x)
+type Position = (Int, Int)
+
 data CellState = Empty | Filled | Untouched | Expanded deriving (Eq, Show)
 
 type CellValue = Maybe Int
@@ -16,9 +20,6 @@ type Cell = (CellValue, CellState)
 type Row = [Cell]
 
 type Board = [Row]
-
--- (y, x)
-type Position = (Int, Int)
 
 type Triple t = (t, t, t)
 
@@ -48,13 +49,31 @@ createBoard = map parseRow
     digitToInt c = Just (fromEnum c - 48)
 
 
-getCell :: Board -> Position -> Cell
-getCell board (y, x)
-  | x < 0 || y < 0 || x >= width || y >= height = (Nothing, Expanded)
-  | otherwise = (board !! y) !! x
+positionValid :: Board -> Position -> Bool
+positionValid board (y, x)
+  | x < 0 || y < 0 || x >= width || y >= height = True
+  | otherwise = False
   where
     height = length board
     width = length (head board)
+
+
+getCell :: Board -> Position -> Cell
+getCell board (y, x)
+  | not (positionValid board (y, x)) = (Nothing, Expanded)
+  | otherwise = (board !! y) !! x
+
+setBoardCell :: Board -> Position -> CellState -> Board
+setBoardCell board (y, x) state 
+  | positionValid board (y, x) =  take y board ++ setInRow (board !! y) : drop (y+1) board
+  | otherwise = board
+  where  
+    (value, _) = board !! y !! x
+
+    setInRow :: Row -> Row
+    setInRow row = take x row ++ ((value, state) : drop (x+1) row)
+
+
 
 neighborhoodOfCell :: Board -> Position -> Neighborhood
 neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
@@ -74,16 +93,6 @@ processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh = nbh
 
 -- TODO: do all heuristic checks
-
-setBoardCell :: Board -> Position -> CellState -> Board
-setBoardCell board (y, x) state = 
-  take y board ++ setInRow (board !! y) : drop (y+1) board
-  where  
-    (value, _) = board !! y !! x
-
-    setInRow :: Row -> Row
-    setInRow row = take x row ++ ((value, state) : drop (x+1) row)
-
 
 getCellState :: Cell -> CellState
 getCellState (_, state) = state
