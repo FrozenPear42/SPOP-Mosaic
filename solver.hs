@@ -34,7 +34,7 @@ readPuzzle filename = do
   return puzzle
 
 createBoard :: [String] -> Board
-createBoard rows = map parseRow rows
+createBoard = map parseRow 
   where
     parseRow :: String -> Row
     parseRow [] = []
@@ -47,9 +47,6 @@ createBoard rows = map parseRow rows
     digitToInt :: Char -> Maybe Int
     digitToInt c = Just (fromEnum c - 48)
 
-emptyRow :: Int -> Row
-emptyRow 1 = [blankCell]
-emptyRow n = blankCell : emptyRow (n - 1)
 
 getCell :: Board -> Position -> Cell
 getCell board (y, x)
@@ -78,10 +75,30 @@ processNeighborhood nbh = nbh
 
 -- TODO: do all heuristic checks
 
-updateBoard :: Board -> Position -> Neighborhood -> Board
-updateBoard board (y, x) nbh = board
+setBoardCell :: Board -> Position -> CellState -> Board
+setBoardCell board (y, x) state = 
+  take y board ++ setInRow (board !! y) : drop (y+1) board
+  where  
+    (value, _) = board !! y !! x
 
--- TODO: write cells to board
+    setInRow :: Row -> Row
+    setInRow row = take x row ++ ((value, state) : drop (x+1) row)
+
+
+getCellState :: Cell -> CellState
+getCellState (_, state) = state
+
+updateBoard :: Board -> Position -> Neighborhood -> Board
+updateBoard board (y, x) ((nw,n,ne), (w,c,e), (sw,s,se)) = 
+  foldr setCellWrapped board cells
+  where
+    cells = [((y-1, x-1), getCellState nw), ((y-1, x), getCellState n), ((y-1, x+1), getCellState n)]
+         ++ [((y, x-1), getCellState w), ((y, x), getCellState c), ((y, x+1), getCellState e)]
+         ++ [((y+1, x-1), getCellState sw), ((y+1, x), getCellState s), ((y+1, x+1), getCellState se)]
+
+    setCellWrapped :: (Position, CellState) -> Board -> Board
+    setCellWrapped (pos, state) board = setBoardCell board pos state
+
 
 processCellAtPosition :: Position -> Board -> Board
 processCellAtPosition pos board = resultBoard
@@ -127,12 +144,41 @@ boardsEqual bA bB = cntA == cntB
     cntA = countFilledCells bA
     cntB = countFilledCells bB
 
+-- probably could use numberedCells as secondInput for optimization
 boardValid :: Board -> Bool
+boardValid board = foldl reducer True numberedCells
+  where
+    numberedCells = findNumberedCells board
+
+    reducer :: Bool -> Position -> Bool
+    reducer False pos = False 
+    reducer True pos = cellValid board pos 
+
+    cellValid :: Board -> Position -> Bool
+    cellValid board pos = neighborhoodValid n where
+      n = neighborhoodOfCell board pos
+
+
+
+boardCompleted :: Board -> Bool
+boardCompleted board = countUntouchedCells board == 0
+
+printBoard :: Board -> IO ()
+printBoard = mapM_ printRow
+  where
+    printRow row = putStrLn (map toChar row)
+
+    toChar :: Cell -> Char
+    toChar (Nothing, Untouched) = 'x'
+    toChar (Just x, Untouched) = toEnum (x + 48)
+    toChar (_, Filled) = '#'
+    toChar (_, Empty) = '_'
+    toChar (_, Expanded) = '-'
 
 
 solve :: Board -> (Board, Bool)
 solve board 
-  | boardValid newBoard && countUntouchedCells newBoard == 0 = newBoard
+  | boardValid newBoard && boardCompleted newBoard = newBoard
   -- | boardValid newBoard && boardsEqual board newBoard = solve -- TODO: Backtrack  
   | boardValid newBoard not True = (newBoard, False)  
   where
