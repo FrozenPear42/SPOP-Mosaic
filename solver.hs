@@ -28,12 +28,19 @@ type Neighborhood = Triple (Triple Cell)
 blankCell :: Cell
 blankCell = (Nothing, Untouched)
 
+-- |Extracts cell state
+getCellState :: Cell -> CellState
+getCellState (_, state) = state
+
+-- |Reads puzzle file into list of strings (list of lines)
+-- Each character in line is represented by either number or '.' 
 readPuzzle :: String -> IO [String]
 readPuzzle filename = do
   contents <- readFile filename
   let puzzle = read contents :: [String]
   return puzzle
 
+-- |Parses list of strings into Board
 createBoard :: [String] -> Board
 createBoard = map parseRow 
   where
@@ -49,6 +56,7 @@ createBoard = map parseRow
     digitToInt c = Just (fromEnum c - 48)
 
 
+-- |Checks if position is in board bounds
 positionValid :: Board -> Position -> Bool
 positionValid board (y, x)
   | x < 0 || y < 0 || x >= width || y >= height = True
@@ -57,12 +65,14 @@ positionValid board (y, x)
     height = length board
     width = length (head board)
 
-
+-- |Gets cell at given position. If position is out of bounds
+-- Expanded cell will be returned instead
 getCell :: Board -> Position -> Cell
 getCell board (y, x)
   | not (positionValid board (y, x)) = (Nothing, Expanded)
   | otherwise = (board !! y) !! x
 
+-- |Updates board with new cell state at given position
 setBoardCell :: Board -> Position -> CellState -> Board
 setBoardCell board (y, x) state 
   | positionValid board (y, x) =  take y board ++ setInRow (board !! y) : drop (y+1) board
@@ -74,7 +84,7 @@ setBoardCell board (y, x) state
     setInRow row = take x row ++ ((value, state) : drop (x+1) row)
 
 
-
+-- |Updates board with new cell state at given position
 neighborhoodOfCell :: Board -> Position -> Neighborhood
 neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
   where
@@ -89,14 +99,11 @@ neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
     s = boardCell (y + 1, x)
     se = boardCell (y + 1, x + 1)
 
+-- |Solves single neighborhood
 processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh = nbh
 
--- TODO: do all heuristic checks
-
-getCellState :: Cell -> CellState
-getCellState (_, state) = state
-
+-- |Updates board with neighborhood on given position
 updateBoard :: Board -> Position -> Neighborhood -> Board
 updateBoard board (y, x) ((nw,n,ne), (w,c,e), (sw,s,se)) = 
   foldr setCellWrapped board cells
@@ -115,6 +122,8 @@ processCellAtPosition pos board = resultBoard
     neighborhood = neighborhoodOfCell board pos
     resultBoard = updateBoard board pos (processNeighborhood neighborhood)
 
+
+-- |Finds cells with numbers on board
 findNumberedCells :: Board -> [Position]
 findNumberedCells board = find board (length board - 1)
   where
@@ -130,9 +139,11 @@ findNumberedCells board = find board (length board - 1)
       | otherwise = findInRow rest (x - 1) y
 
 
+-- |Counts cells of given state on board 
 countCells :: CellState -> Board -> Int
 countCells state board = sum countedRows
   where
+    -- |Counts cells of given state in row
     countInRow :: Row -> Int
     countInRow ((_, state):xs)
       | state == state = 1 + countInRow xs
@@ -140,20 +151,22 @@ countCells state board = sum countedRows
 
     countedRows = map countInRow board
 
+-- |Counts cells of given state on board 
 countFilledCells :: Board -> Int
 countFilledCells = countCells Filled
 
+-- |Counts untouched cells on board 
 countUntouchedCells :: Board -> Int
 countUntouchedCells = countCells Untouched
 
-
+-- |Checks if two boards are equal
 boardsEqual :: Board -> Board -> Bool 
 boardsEqual bA bB = cntA == cntB 
   where 
     cntA = countFilledCells bA
     cntB = countFilledCells bB
 
--- probably could use numberedCells as secondInput for optimization
+-- |Checks board is valid
 boardValid :: Board -> Bool
 boardValid board = foldl reducer True numberedCells
   where
@@ -163,15 +176,16 @@ boardValid board = foldl reducer True numberedCells
     reducer False pos = False 
     reducer True pos = cellValid board pos 
 
+    -- |Checks if cell's neighborhood is valid 
     cellValid :: Board -> Position -> Bool
     cellValid board pos = neighborhoodValid n where
       n = neighborhoodOfCell board pos
 
-
-
+-- |Checks if board is complete (board is solved)
 boardCompleted :: Board -> Bool
 boardCompleted board = countUntouchedCells board == 0
 
+-- |Prints board in pretty way
 printBoard :: Board -> IO ()
 printBoard = mapM_ printRow
   where
@@ -185,6 +199,7 @@ printBoard = mapM_ printRow
     toChar (_, Expanded) = '-'
 
 
+-- |Solves board
 solve :: Board -> (Board, Bool)
 solve board 
   | boardValid newBoard && boardCompleted newBoard = newBoard
