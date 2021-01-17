@@ -25,6 +25,10 @@ type Triple t = (t, t, t)
 
 type Neighborhood = Triple (Triple Cell)
 
+fromJust:: Maybe a -> a
+fromJust Nothing  = error "Maybe.fromJust: Nothing"
+fromJust (Just x) = x
+
 blankCell :: Cell
 blankCell = (Nothing, Untouched)
 
@@ -32,8 +36,17 @@ blankCell = (Nothing, Untouched)
 getCellState :: Cell -> CellState
 getCellState (_, state) = state
 
+-- |Extracts cell value
+getCellValue :: Cell -> Int
+getCellValue (value, _) = fromJust value
+
+-- |Returns a triple constructed by applying a function to all items in a triple
+mapTriple :: (a -> b) -> (a, a, a) -> (b, b, b)
+mapTriple f (a1, a2, a3) = (f a1, f a2, f a3)
+
+
 -- |Reads puzzle file into list of strings (list of lines)
--- Each character in line is represented by either number or '.' 
+-- Each character in line is represented by either number or '.'
 readPuzzle :: String -> IO [String]
 readPuzzle filename = do
   contents <- readFile filename
@@ -42,7 +55,7 @@ readPuzzle filename = do
 
 -- |Parses list of strings into Board
 createBoard :: [String] -> Board
-createBoard = map parseRow 
+createBoard = map parseRow
   where
     parseRow :: String -> Row
     parseRow [] = []
@@ -59,8 +72,8 @@ createBoard = map parseRow
 -- |Checks if position is in board bounds
 positionValid :: Board -> Position -> Bool
 positionValid board (y, x)
-  | x < 0 || y < 0 || x >= width || y >= height = True
-  | otherwise = False
+  | x < 0 || y < 0 || x >= width || y >= height = False
+  | otherwise = True
   where
     height = length board
     width = length (head board)
@@ -74,10 +87,10 @@ getCell board (y, x)
 
 -- |Updates board with new cell state at given position
 setBoardCell :: Board -> Position -> CellState -> Board
-setBoardCell board (y, x) state 
+setBoardCell board (y, x) state
   | positionValid board (y, x) =  take y board ++ setInRow (board !! y) : drop (y+1) board
   | otherwise = board
-  where  
+  where
     (value, _) = board !! y !! x
 
     setInRow :: Row -> Row
@@ -99,16 +112,56 @@ neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
     s = boardCell (y + 1, x)
     se = boardCell (y + 1, x + 1)
 
+-- |Returns if neighborhood is valid
+neighborhoodValid :: Neighborhood -> Bool
+neighborhoodValid nbh =
+  getCellValue c >= countCellsInNeighborhood Filled nbh && getCellValue c <= 9 - countCellsInNeighborhood Empty nbh - countCellsInNeighborhood Expanded nbh
+  where
+    (_, (_, c, _), _) = nbh
+
 -- |Solves single neighborhood
 processNeighborhood :: Neighborhood -> Neighborhood
-processNeighborhood nbh = nbh
+processNeighborhood nbh
+  | getCellValue c - numberOfFilled == numberOfUntouched = setStateOfUntouchedCellsInNeighborhood Filled nbh
+  | getCellValue c == numberOfFilled = setStateOfUntouchedCellsInNeighborhood Empty nbh
+  | otherwise = nbh
+  where
+    (_, (_, c, _), _) = nbh
+    numberOfFilled = countCellsInNeighborhood Filled nbh
+    numberOfUntouched = countCellsInNeighborhood Untouched nbh
+    numberOfExpanded = countCellsInNeighborhood Expanded nbh
+    numberOfEmpty = countCellsInNeighborhood Empty nbh
+
+
+-- |Returns a count of cells with given state in neighborhood
+countCellsInNeighborhood :: CellState -> Neighborhood -> Int
+countCellsInNeighborhood state ((nw, n, ne), (w, c, e), (sw, s, se)) = countCellsInList state listOfCells
+  where
+    listOfCells = [nw, n, ne, w, c, e, sw, s, se]
+
+-- |Returns a count of cells with given state in list
+countCellsInList :: CellState -> [Cell] -> Int
+countCellsInList _ [] = 0
+countCellsInList cellState ((_, state):xs)
+  | state == cellState = 1 + countCellsInList cellState xs
+  | otherwise = countCellsInList cellState  xs
+
+-- |Returns a cell with changed state if untouched
+setStateOfUntouchedCell :: CellState -> Cell -> Cell
+setStateOfUntouchedCell newState (value, state)
+  | state == Untouched = (value, newState)
+  | otherwise = (value, state)
+
+-- |Returns a neighborhood with changed state of all untouched cells
+setStateOfUntouchedCellsInNeighborhood :: CellState -> Neighborhood -> Neighborhood
+setStateOfUntouchedCellsInNeighborhood newState nbh = mapTriple (mapTriple (setStateOfUntouchedCell newState)) nbh
 
 -- |Updates board with neighborhood on given position
 updateBoard :: Board -> Position -> Neighborhood -> Board
-updateBoard board (y, x) ((nw,n,ne), (w,c,e), (sw,s,se)) = 
+updateBoard board (y, x) ((nw,n,ne), (w,c,e), (sw,s,se)) =
   foldr setCellWrapped board cells
   where
-    cells = [((y-1, x-1), getCellState nw), ((y-1, x), getCellState n), ((y-1, x+1), getCellState n)]
+    cells = [((y-1, x-1), getCellState nw), ((y-1, x), getCellState n), ((y-1, x+1), getCellState ne)]
          ++ [((y, x-1), getCellState w), ((y, x), getCellState c), ((y, x+1), getCellState e)]
          ++ [((y+1, x-1), getCellState sw), ((y+1, x), getCellState s), ((y+1, x+1), getCellState se)]
 
@@ -125,44 +178,45 @@ processCellAtPosition pos board = resultBoard
 
 -- |Finds cells with numbers on board
 findNumberedCells :: Board -> [Position]
-findNumberedCells board = find board (length board - 1)
+findNumberedCells board = find board 0
   where
     find :: Board -> Int -> [Position]
     find [] _ = []
-    find _ 0 = []
-    find (row : rest) y = findInRow row (length row) y ++ find rest (y - 1)
+    find (row : rest) y = findInRow row 0 y ++ find rest (y + 1)
 
     findInRow :: Row -> Int -> Int -> [Position]
+    findInRow [] _ _ = []
     findInRow ((cellValue, _) : rest) x y
       | x < 0 = []
-      | cellValue /= Nothing = (y, x) : findInRow rest (x - 1) y
-      | otherwise = findInRow rest (x - 1) y
+      | cellValue /= Nothing = (y, x) : findInRow rest (x + 1) y
+      | otherwise = findInRow rest (x + 1) y
 
 
--- |Counts cells of given state on board 
+-- |Counts cells of given state on board
 countCells :: CellState -> Board -> Int
 countCells state board = sum countedRows
   where
     -- |Counts cells of given state in row
     countInRow :: Row -> Int
-    countInRow ((_, state):xs)
-      | state == state = 1 + countInRow xs
+    countInRow [] = 0
+    countInRow ((_, cellState):xs)
+      | cellState == state = 1 + countInRow xs
       | otherwise = countInRow xs
 
     countedRows = map countInRow board
 
--- |Counts cells of given state on board 
+-- |Counts cells of given state on board
 countFilledCells :: Board -> Int
 countFilledCells = countCells Filled
 
--- |Counts untouched cells on board 
+-- |Counts untouched cells on board
 countUntouchedCells :: Board -> Int
 countUntouchedCells = countCells Untouched
 
 -- |Checks if two boards are equal
-boardsEqual :: Board -> Board -> Bool 
-boardsEqual bA bB = cntA == cntB 
-  where 
+boardsEqual :: Board -> Board -> Bool
+boardsEqual bA bB = cntA == cntB
+  where
     cntA = countFilledCells bA
     cntB = countFilledCells bB
 
@@ -173,10 +227,10 @@ boardValid board = foldl reducer True numberedCells
     numberedCells = findNumberedCells board
 
     reducer :: Bool -> Position -> Bool
-    reducer False pos = False 
-    reducer True pos = cellValid board pos 
+    reducer False pos = False
+    reducer True pos = cellValid board pos
 
-    -- |Checks if cell's neighborhood is valid 
+    -- |Checks if cell's neighborhood is valid
     cellValid :: Board -> Position -> Bool
     cellValid board pos = neighborhoodValid n where
       n = neighborhoodOfCell board pos
