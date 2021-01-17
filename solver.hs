@@ -252,23 +252,47 @@ printBoard = mapM_ printRow
     toChar (_, Empty) = '_'
     toChar (_, Expanded) = '-'
 
+-- |returns position of any unchecked position if exists
+findAnyUncheckedCell:: Board -> Maybe Position
+findAnyUncheckedCell board = find board 0
+  where
+    find :: Board -> Int -> Maybe Position
+    find [] _ = Nothing
+    find (row : rest) i  | getIndexInRow row 0 /= Nothing = Just (i, fromJust(getIndexInRow row 0))
+                                  | otherwise = find rest (i+1)
+
+    getIndexInRow :: [Cell] -> Int -> Maybe Int
+    getIndexInRow [] _                 = Nothing
+    getIndexInRow ((_, state):xs) i | state == Untouched    = Just i
+                                             | otherwise             = getIndexInRow xs (i + 1)
 
 -- |Solves board
-solve :: Board -> (Board, Bool)
-solve board 
-  | boardValid newBoard && boardCompleted newBoard = newBoard
-  -- | boardValid newBoard && boardsEqual board newBoard = solve -- TODO: Backtrack  
-  | boardValid newBoard not True = (newBoard, False)  
+solve :: Maybe Board -> Maybe Board
+solve board
+  | board == Nothing = Nothing
+  | not (boardValid newBoard) = Nothing
+  | boardCompleted newBoard = Just newBoard
+  | newBoard == fromJust board = tryUncheckedCell newBoard
+  | otherwise = solve (Just newBoard)
   where
     step :: Board -> Board
     step board = foldr processCellAtPosition board niceCells
       where
         niceCells = findNumberedCells board
 
-    newBoard = step board
+    newBoard = step $fromJust board
+
+    tryUncheckedCell:: Board -> Maybe (Board)
+    tryUncheckedCell board
+      | boardWithFilledCell /= Nothing = boardWithFilledCell
+      | otherwise = boardWithEmptyCell
+      where
+        uncheckedCell = findAnyUncheckedCell(board)
+        boardWithFilledCell = solve ( Just (setBoardCell board (fromJust uncheckedCell) Filled))
+        boardWithEmptyCell = solve ( Just (setBoardCell board (fromJust uncheckedCell) Empty))
 
 main = do
   puzzle <- readPuzzle "puzzles/heart.txt"
   let board = createBoard puzzle
-      solved = solve board
-  print solved
+      solved = solve (Just board)
+  printBoard (fromJust solved)
