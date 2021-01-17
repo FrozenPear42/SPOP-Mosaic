@@ -2,6 +2,7 @@ module Solver where
 
 -- Coordinate system
 -- 0--------- x
+
 -- |
 -- |
 -- |
@@ -25,35 +26,41 @@ type Triple t = (t, t, t)
 
 type Neighborhood = Triple (Triple Cell)
 
-fromJust:: Maybe a -> a
-fromJust Nothing  = error "Maybe.fromJust: Nothing"
+fromJust :: Maybe a -> a
+fromJust Nothing = error "Maybe.fromJust: Nothing"
 fromJust (Just x) = x
+
+isJust :: Maybe a -> Bool
+isJust (Just a) = True
+isJust Nothing = False
+
+isNothing :: Maybe a -> Bool
+isNothing m = not (isJust m)
 
 blankCell :: Cell
 blankCell = (Nothing, Untouched)
 
--- |Extracts cell state
+-- | Extracts cell state
 getCellState :: Cell -> CellState
 getCellState (_, state) = state
 
--- |Extracts cell value
+-- | Extracts cell value
 getCellValue :: Cell -> Int
 getCellValue (value, _) = fromJust value
 
--- |Returns a triple constructed by applying a function to all items in a triple
-mapTriple :: (a -> b) -> (a, a, a) -> (b, b, b)
+-- | Returns a triple constructed by applying a function to all items in a triple
+mapTriple :: (a -> b) -> Triple a -> Triple b
 mapTriple f (a1, a2, a3) = (f a1, f a2, f a3)
 
-
--- |Reads puzzle file into list of strings (list of lines)
--- Each character in line is represented by either number or '.'
+-- | Reads puzzle file into list of strings (list of lines)
+--  Each character in line is represented by either number or '.'
 readPuzzle :: String -> IO [String]
 readPuzzle filename = do
   contents <- readFile filename
   let puzzle = read contents :: [String]
   return puzzle
 
--- |Parses list of strings into Board
+-- | Parses list of strings into Board
 createBoard :: [String] -> Board
 createBoard = map parseRow
   where
@@ -68,8 +75,7 @@ createBoard = map parseRow
     digitToInt :: Char -> Maybe Int
     digitToInt c = Just (fromEnum c - 48)
 
-
--- |Checks if position is in board bounds
+-- | Checks if position is in board bounds
 positionValid :: Board -> Position -> Bool
 positionValid board (y, x)
   | x < 0 || y < 0 || x >= width || y >= height = False
@@ -78,26 +84,25 @@ positionValid board (y, x)
     height = length board
     width = length (head board)
 
--- |Gets cell at given position. If position is out of bounds
--- Expanded cell will be returned instead
+-- | Gets cell at given position. If position is out of bounds
+--  Expanded cell will be returned instead
 getCell :: Board -> Position -> Cell
 getCell board (y, x)
   | not (positionValid board (y, x)) = (Nothing, Expanded)
   | otherwise = (board !! y) !! x
 
--- |Updates board with new cell state at given position
+-- | Updates board with new cell state at given position
 setBoardCell :: Board -> Position -> CellState -> Board
 setBoardCell board (y, x) state
-  | positionValid board (y, x) =  take y board ++ setInRow (board !! y) : drop (y+1) board
+  | positionValid board (y, x) = take y board ++ setInRow (board !! y) : drop (y + 1) board
   | otherwise = board
   where
     (value, _) = board !! y !! x
 
     setInRow :: Row -> Row
-    setInRow row = take x row ++ ((value, state) : drop (x+1) row)
+    setInRow row = take x row ++ ((value, state) : drop (x + 1) row)
 
-
--- |Updates board with new cell state at given position
+-- | Updates board with new cell state at given position
 neighborhoodOfCell :: Board -> Position -> Neighborhood
 neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
   where
@@ -112,62 +117,74 @@ neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
     s = boardCell (y + 1, x)
     se = boardCell (y + 1, x + 1)
 
--- |Returns if neighborhood is valid
+getMiddleCell :: Neighborhood -> Cell
+getMiddleCell (_, (_, c, _), _) = c
+
+-- | Returns if neighborhood is valid
 neighborhoodValid :: Neighborhood -> Bool
 neighborhoodValid nbh =
-  getCellValue c >= countCellsInNeighborhood Filled nbh && getCellValue c <= 9 - countCellsInNeighborhood Empty nbh - countCellsInNeighborhood Expanded nbh
+  middleValue >= filledCellsCount && middleValue <= 9 - emptyCellsCount - expandedCellsCount
   where
-    (_, (_, c, _), _) = nbh
+    middleValue = getCellValue (getMiddleCell nbh)
+    filledCellsCount = countCellsInNeighborhood Filled nbh
+    emptyCellsCount = countCellsInNeighborhood Empty nbh
+    expandedCellsCount = countCellsInNeighborhood Expanded nbh
 
--- |Solves single neighborhood
+-- | Solves single neighborhood
 processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh
-  | getCellValue c - numberOfFilled == numberOfUntouched = setStateOfUntouchedCellsInNeighborhood Filled nbh
-  | getCellValue c == numberOfFilled = setStateOfUntouchedCellsInNeighborhood Empty nbh
+  | middleValue - numberOfFilled == numberOfUntouched = fillUntouchedNeighborhoodWithState nbh Filled
+  | middleValue == numberOfFilled = fillUntouchedNeighborhoodWithState nbh Empty
   | otherwise = nbh
   where
-    (_, (_, c, _), _) = nbh
+    middleValue = getCellValue (getMiddleCell nbh)
     numberOfFilled = countCellsInNeighborhood Filled nbh
     numberOfUntouched = countCellsInNeighborhood Untouched nbh
-    numberOfExpanded = countCellsInNeighborhood Expanded nbh
-    numberOfEmpty = countCellsInNeighborhood Empty nbh
 
+unwrapNeighborhoodFlat :: Neighborhood -> [Cell]
+unwrapNeighborhoodFlat ((nw, n, ne), (w, c, e), (sw, s, se)) = [nw, n, ne, w, c, e, sw, s, se]
 
--- |Returns a count of cells with given state in neighborhood
+-- | Returns a count of cells with given state in neighborhood
 countCellsInNeighborhood :: CellState -> Neighborhood -> Int
-countCellsInNeighborhood state ((nw, n, ne), (w, c, e), (sw, s, se)) = countCellsInList state listOfCells
+countCellsInNeighborhood state nbh = countCellsInList state listOfCells
   where
-    listOfCells = [nw, n, ne, w, c, e, sw, s, se]
+    listOfCells = unwrapNeighborhoodFlat nbh
 
--- |Returns a count of cells with given state in list
-countCellsInList :: CellState -> [Cell] -> Int
-countCellsInList _ [] = 0
-countCellsInList cellState ((_, state):xs)
-  | state == cellState = 1 + countCellsInList cellState xs
-  | otherwise = countCellsInList cellState  xs
+    countCellsInList :: CellState -> [Cell] -> Int
+    countCellsInList _ [] = 0
+    countCellsInList cellState ((_, state) : rest)
+      | state == cellState = 1 + countCellsInList cellState rest
+      | otherwise = countCellsInList cellState rest
 
--- |Returns a cell with changed state if untouched
-setStateOfUntouchedCell :: CellState -> Cell -> Cell
-setStateOfUntouchedCell newState (value, state)
-  | state == Untouched = (value, newState)
-  | otherwise = (value, state)
+-- | Returns a neighborhood with changed state of all untouched cells
+fillUntouchedNeighborhoodWithState :: Neighborhood -> CellState -> Neighborhood
+fillUntouchedNeighborhoodWithState nbh newState =
+  mapTriple (mapTriple (updateCellIfUntouched newState)) nbh
+  where
+    updateCellIfUntouched :: CellState -> Cell -> Cell
+    updateCellIfUntouched newState (value, state)
+      | state == Untouched = (value, newState)
+      | otherwise = (value, state)
 
--- |Returns a neighborhood with changed state of all untouched cells
-setStateOfUntouchedCellsInNeighborhood :: CellState -> Neighborhood -> Neighborhood
-setStateOfUntouchedCellsInNeighborhood newState nbh = mapTriple (mapTriple (setStateOfUntouchedCell newState)) nbh
-
--- |Updates board with neighborhood on given position
+-- | Updates board with neighborhood on given position
 updateBoard :: Board -> Position -> Neighborhood -> Board
-updateBoard board (y, x) ((nw,n,ne), (w,c,e), (sw,s,se)) =
+updateBoard board (y, x) ((nw, n, ne), (w, c, e), (sw, s, se)) =
   foldr setCellWrapped board cells
   where
-    cells = [((y-1, x-1), getCellState nw), ((y-1, x), getCellState n), ((y-1, x+1), getCellState ne)]
-         ++ [((y, x-1), getCellState w), ((y, x), getCellState c), ((y, x+1), getCellState e)]
-         ++ [((y+1, x-1), getCellState sw), ((y+1, x), getCellState s), ((y+1, x+1), getCellState se)]
+    cells =
+      [ ((y -1, x -1), getCellState nw),
+        ((y -1, x), getCellState n),
+        ((y -1, x + 1), getCellState ne),
+        ((y, x -1), getCellState w),
+        ((y, x), getCellState c),
+        ((y, x + 1), getCellState e),
+        ((y + 1, x -1), getCellState sw),
+        ((y + 1, x), getCellState s),
+        ((y + 1, x + 1), getCellState se)
+      ]
 
     setCellWrapped :: (Position, CellState) -> Board -> Board
     setCellWrapped (pos, state) board = setBoardCell board pos state
-
 
 processCellAtPosition :: Position -> Board -> Board
 processCellAtPosition pos board = resultBoard
@@ -175,8 +192,7 @@ processCellAtPosition pos board = resultBoard
     neighborhood = neighborhoodOfCell board pos
     resultBoard = updateBoard board pos (processNeighborhood neighborhood)
 
-
--- |Finds cells with numbers on board
+-- | Finds cells with numbers on board
 findNumberedCells :: Board -> [Position]
 findNumberedCells board = find board 0
   where
@@ -186,41 +202,39 @@ findNumberedCells board = find board 0
 
     findInRow :: Row -> Int -> Int -> [Position]
     findInRow [] _ _ = []
-    findInRow ((cellValue, _) : rest) x y
+    findInRow ((middleValue, _) : rest) x y
       | x < 0 = []
-      | cellValue /= Nothing = (y, x) : findInRow rest (x + 1) y
+      | isJust middleValue = (y, x) : findInRow rest (x + 1) y
       | otherwise = findInRow rest (x + 1) y
 
-
--- |Counts cells of given state on board
+-- | Counts cells of given state on board
 countCells :: CellState -> Board -> Int
 countCells state board = sum countedRows
   where
-    -- |Counts cells of given state in row
     countInRow :: Row -> Int
     countInRow [] = 0
-    countInRow ((_, cellState):xs)
+    countInRow ((_, cellState) : xs)
       | cellState == state = 1 + countInRow xs
       | otherwise = countInRow xs
 
     countedRows = map countInRow board
 
--- |Counts cells of given state on board
+-- | Counts cells of given state on board
 countFilledCells :: Board -> Int
 countFilledCells = countCells Filled
 
--- |Counts untouched cells on board
+-- | Counts untouched cells on board
 countUntouchedCells :: Board -> Int
 countUntouchedCells = countCells Untouched
 
--- |Checks if two boards are equal
+-- | Checks if two boards are equal
 boardsEqual :: Board -> Board -> Bool
 boardsEqual bA bB = cntA == cntB
   where
     cntA = countFilledCells bA
     cntB = countFilledCells bB
 
--- |Checks board is valid
+-- | Checks board is valid
 boardValid :: Board -> Bool
 boardValid board = foldl reducer True numberedCells
   where
@@ -229,17 +243,16 @@ boardValid board = foldl reducer True numberedCells
     reducer :: Bool -> Position -> Bool
     reducer False pos = False
     reducer True pos = cellValid board pos
-
-    -- |Checks if cell's neighborhood is valid
     cellValid :: Board -> Position -> Bool
-    cellValid board pos = neighborhoodValid n where
-      n = neighborhoodOfCell board pos
+    cellValid board pos = neighborhoodValid n
+      where
+        n = neighborhoodOfCell board pos
 
--- |Checks if board is complete (board is solved)
+-- | Checks if board is complete (board is solved)
 boardCompleted :: Board -> Bool
 boardCompleted board = countUntouchedCells board == 0
 
--- |Prints board in pretty way
+-- | Prints board in pretty way
 printBoard :: Board -> IO ()
 printBoard = mapM_ printRow
   where
@@ -252,24 +265,26 @@ printBoard = mapM_ printRow
     toChar (_, Empty) = '_'
     toChar (_, Expanded) = '-'
 
--- |returns position of any unchecked position if exists
-findAnyUncheckedCell:: Board -> Maybe Position
+-- | returns position of any unchecked position if exists
+findAnyUncheckedCell :: Board -> Maybe Position
 findAnyUncheckedCell board = find board 0
   where
     find :: Board -> Int -> Maybe Position
     find [] _ = Nothing
-    find (row : rest) i  | getIndexInRow row 0 /= Nothing = Just (i, fromJust(getIndexInRow row 0))
-                                  | otherwise = find rest (i+1)
+    find (row : rest) y
+      | isJust (getIndexInRow row 0) = Just (y, fromJust (getIndexInRow row 0))
+      | otherwise = find rest (y + 1)
 
     getIndexInRow :: [Cell] -> Int -> Maybe Int
-    getIndexInRow [] _                 = Nothing
-    getIndexInRow ((_, state):xs) i | state == Untouched    = Just i
-                                             | otherwise             = getIndexInRow xs (i + 1)
+    getIndexInRow [] _ = Nothing
+    getIndexInRow (cell : rest) x
+      | getCellState cell == Untouched = Just x
+      | otherwise = getIndexInRow rest (x + 1)
 
--- |Solves board
+-- | Solves board
 solve :: Maybe Board -> Maybe Board
 solve board
-  | board == Nothing = Nothing
+  | isNothing board = Nothing
   | not (boardValid newBoard) = Nothing
   | boardCompleted newBoard = Just newBoard
   | newBoard == fromJust board = tryUncheckedCell newBoard
@@ -280,19 +295,22 @@ solve board
       where
         niceCells = findNumberedCells board
 
-    newBoard = step $fromJust board
+    newBoard = step (fromJust board)
 
-    tryUncheckedCell:: Board -> Maybe (Board)
+    tryUncheckedCell :: Board -> Maybe Board
     tryUncheckedCell board
-      | boardWithFilledCell /= Nothing = boardWithFilledCell
-      | otherwise = boardWithEmptyCell
+      | isJust newBoardWithFilledCell = newBoardWithFilledCell
+      | otherwise = newBoardWithEmptyCell
       where
-        uncheckedCell = findAnyUncheckedCell(board)
-        boardWithFilledCell = solve ( Just (setBoardCell board (fromJust uncheckedCell) Filled))
-        boardWithEmptyCell = solve ( Just (setBoardCell board (fromJust uncheckedCell) Empty))
+        uncheckedCell = fromJust (findAnyUncheckedCell board)
+        boardWithFilledCell = setBoardCell board uncheckedCell Filled
+        boardWithEmptyCell = setBoardCell board uncheckedCell Empty
+
+        newBoardWithFilledCell = solve (Just boardWithFilledCell)
+        newBoardWithEmptyCell = solve (Just boardWithEmptyCell)
 
 main = do
-  puzzle <- readPuzzle "puzzles/heart.txt"
+  puzzle <- readPuzzle "puzzles/lizard.txt"
   let board = createBoard puzzle
       solved = solve (Just board)
   printBoard (fromJust solved)
