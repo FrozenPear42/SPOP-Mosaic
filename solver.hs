@@ -1,4 +1,4 @@
-module Solver where
+module Main where
 
 -- Coordinate system
 -- 0--------- x
@@ -104,6 +104,28 @@ setBoardCell board (y, x) state
     setInRow :: Row -> Row
     setInRow row = take x row ++ ((value, state) : drop (x + 1) row)
 
+setNeighborhoodCellState :: Neighborhood -> CellState -> Position -> Neighborhood
+setNeighborhoodCellState (up, center, down) state pos
+  | pos == (-1, -1) = ((updateCellState nw, n, ne), center, down)
+  | pos == (-1, 0) = ((nw, updateCellState n, ne), center, down)
+  | pos == (-1, 1) = ((nw, n, updateCellState ne), center, down)
+  | pos == (0, -1) = (up, (updateCellState w, c, e), down)
+  | pos == (0, 0) = (up, (w, updateCellState c, e), down)
+  | pos == (0, 1) = (up, (w, c, updateCellState e), down)
+  | pos == (1, -1) = (up, center, (updateCellState sw, s, se))
+  | pos == (1, 0) = (up, center, (sw, updateCellState s, se))
+  | pos == (1, 1) = (up, center, (sw, s, updateCellState se))
+  | otherwise = ((nw, n, ne), (w, c, e), (sw, s, se))
+  where
+    ((nw, n, ne), (w, c, e), (sw, s, se)) = (up, center, down)
+    updateCellState :: Cell -> Cell
+    updateCellState cell = (getCellValue cell, state)
+
+fillNeighborhoodCellStates :: Neighborhood -> CellState -> [Position] -> Neighborhood
+fillNeighborhoodCellStates nbh state = foldl reducer nbh
+  where
+    reducer nbh = setNeighborhoodCellState nbh state
+
 -- | Updates board with new cell state at given position
 neighborhoodOfCell :: Board -> Position -> Neighborhood
 neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
@@ -135,65 +157,41 @@ neighborhoodValid nbh =
 -- | Solves single neighborhood
 processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh
-  | cValue == numberOfFilled + numberOfUntouched = setStateOfUntouchedCellsInNeighborhood Filled nbh
-  | cValue == numberOfFilled = setStateOfUntouchedCellsInNeighborhood Empty nbh
-  | getCellValue nw /= Nothing && checkCase (-1, -1) nbh /= Nothing = fromJust (checkCase (-1, -1) nbh)
-  | getCellValue n /= Nothing && checkCase (-1, 0) nbh /= Nothing = fromJust (checkCase (-1, 0) nbh)
-  | getCellValue ne /= Nothing && checkCase (-1, 1) nbh /= Nothing = fromJust (checkCase (-1, 1) nbh)
-  | getCellValue w /= Nothing && checkCase (0, -1) nbh /= Nothing = fromJust (checkCase (0, -1) nbh)
-  | getCellValue e /= Nothing && checkCase (0, 1) nbh /= Nothing = fromJust (checkCase (0, 1) nbh)
-  | getCellValue sw /= Nothing && checkCase (1, -1) nbh /= Nothing = fromJust (checkCase (1, -1) nbh)
-  | getCellValue s /= Nothing && checkCase (1, 0) nbh /= Nothing = fromJust (checkCase (1, 0) nbh)
-  | getCellValue se /= Nothing && checkCase (1, 1) nbh /= Nothing = fromJust (checkCase (1, 1) nbh)
-  | otherwise = nbh
+  | cValue == numberOfFilled + numberOfUntouched = fillUntouchedNeighborhoodWithState nbh Filled
+  | cValue == numberOfFilled = fillUntouchedNeighborhoodWithState nbh Empty
+  | otherwise = applyKnownSolutions nbh
   where
     ((nw, n, ne), (w, c, e), (sw, s, se)) = nbh
     cValue = fromJust (getCellValue c)
     numberOfFilled = countCellsInNeighborhood Filled nbh
     numberOfUntouched = countCellsInNeighborhood Untouched nbh
 
+    applyKnownSolutions :: Neighborhood -> Neighborhood
+    applyKnownSolutions nbh = foldr ($) nbh solutions
+      where
+        solutions = [diff3east, diff3west, diff3north, diff3south]
+
+        diff3west nbh = diff3x nbh (getCellValue w) [(-1, 1), (0, 1), (1, 1)]
+          where
+            (_, (w, _, _), _) = nbh
+        diff3east nbh = diff3x nbh (getCellValue e) [(-1, -1), (0, -1), (1, -1)]
+          where
+            (_, (_, _, e), _) = nbh
+        diff3north nbh = diff3x nbh (getCellValue n) [(1, -1), (1, 0), (1, 1)]
+          where
+            ((_, n, _), _, _) = nbh
+        diff3south nbh = diff3x nbh (getCellValue s) [(-1, -1), (-1, 0), (-1, 1)]
+          where
+            (_, _, (_, s, _)) = nbh
+
+        diff3x :: Neighborhood -> CellValue -> [Position] -> Neighborhood
+        diff3x nbh cellValue positions
+          | isJust cellValue && cValue - fromJust cellValue >= 3 =
+            fillNeighborhoodCellStates nbh Filled positions
+          | otherwise = nbh
+
 unwrapNeighborhoodFlat :: Neighborhood -> [Cell]
 unwrapNeighborhoodFlat ((nw, n, ne), (w, c, e), (sw, s, se)) = [nw, n, ne, w, c, e, sw, s, se]
-
----returns updated neighborhood if it is possible to update depending on cell Value in relative position
-
-checkCase :: Position -> Neighborhood -> Maybe (Neighborhood)
-checkCase relativePosition nbh
-  | cValue == value + numberOfUntouched + numberOfFilled = Just (mapWithFilter (setStateOfUntouchedCell Filled) nbh caseFilter)
-  | otherwise = Nothing
-  where
-    (_, (_, c, _), _) = nbh
-    cValue = fromJust (getCellValue c)
-    value = fromJust (valueFromRelativePosition relativePosition nbh)
-    caseFilter = neighborhoodFilter (relativePosition)
-    numberOfUntouched = countCellsInNeighborhoodWithFilter Untouched nbh caseFilter
-    numberOfFilled = countCellsInNeighborhoodWithFilter Filled nbh caseFilter
-
--- | Returns value of cell in relative position in neighborhood
-valueFromRelativePosition :: Position -> Neighborhood -> CellValue
-valueFromRelativePosition position nbh
-  | position == (-1, -1) = getCellValue (nw)
-  | position == (-1, 0) = getCellValue (n)
-  | position == (-1, 1) = getCellValue (ne)
-  | position == (0, -1) = getCellValue (w)
-  | position == (0, 1) = getCellValue (e)
-  | position == (1, -1) = getCellValue (sw)
-  | position == (1, 0) = getCellValue (s)
-  | position == (1, 1) = getCellValue (se)
-  where
-    ((nw, n, ne), (w, c, e), (sw, s, se)) = nbh
-
--- | True if cell in neighborhood doesn't belong to neighborhood of cell with relative position
-neighborhoodFilter :: Position -> Filter
-neighborhoodFilter position
-  | position == (-1, -1) = ((False, False, True), (False, False, True), (True, True, True))
-  | position == (-1, 0) = ((False, False, False), (False, False, False), (True, True, True))
-  | position == (-1, 1) = ((True, False, False), (True, False, False), (True, True, True))
-  | position == (0, -1) = ((False, False, True), (False, False, True), (False, False, True))
-  | position == (0, 1) = ((True, False, False), (True, False, False), (True, False, False))
-  | position == (1, -1) = ((True, True, True), (False, False, True), (False, False, True))
-  | position == (1, 0) = ((True, True, True), (False, False, False), (False, False, False))
-  | position == (1, 1) = ((True, True, True), (True, False, False), (True, False, False))
 
 -- | Returns a count of cells with given state in neighborhood
 countCellsInNeighborhood :: CellState -> Neighborhood -> Int
@@ -211,38 +209,12 @@ countCellsInNeighborhood state nbh = countCellsInList state listOfCells
 fillUntouchedNeighborhoodWithState :: Neighborhood -> CellState -> Neighborhood
 fillUntouchedNeighborhoodWithState nbh newState =
   mapTriple (mapTriple (updateCellIfUntouched newState)) nbh
-  where
-    updateCellIfUntouched :: CellState -> Cell -> Cell
-    updateCellIfUntouched newState (value, state)
-      | state == Untouched = (value, newState)
-      | otherwise = (value, state)
 
--- | Returns a neighborhood with changed state of all untouched cells
-setStateOfUntouchedCellsInNeighborhood :: CellState -> Neighborhood -> Neighborhood
-setStateOfUntouchedCellsInNeighborhood newState nbh = mapTriple (mapTriple (setStateOfUntouchedCell newState)) nbh
-
--- | applays  a neighborhood with changed state of all untouched cells
-mapWithFilter :: (a -> a) -> Triple (Triple (a)) -> Filter -> Triple (Triple (a))
-mapWithFilter fun (x1, x2, x3) (f_x1, f_x2, f_x3) = (applyOnTriple fun x1 f_x1, applyOnTriple fun x2 f_x2, applyOnTriple fun x3 f_x3)
-  where
-    applyOnTriple :: (a -> a) -> Triple (a) -> Triple (Bool) -> Triple (a)
-    applyOnTriple fun (a1, a2, a3) (f_a1, f_a2, f_a3) = (apply fun a1 f_a1, apply fun a2 f_a2, apply fun a3 f_a3)
-
-    apply :: (a -> a) -> a -> Bool -> a
-    apply fun a True = fun a
-    apply _ a _ = a
-
-countCellsInNeighborhoodWithFilter :: CellState -> Neighborhood -> Filter -> Int
-countCellsInNeighborhoodWithFilter state (x1, x2, x3) (f_x1, f_x2, f_x3) = countInTipple state x1 f_x1 + countInTipple state x2 f_x2 + countInTipple state x3 f_x3
-  where
-    countInTipple :: CellState -> Triple (Cell) -> Triple (Bool) -> Int
-    countInTipple state (a1, a2, a3) (f_a1, f_a2, f_a3) = checkState state a1 f_a1 + checkState state a2 f_a2 + checkState state a3 f_a3
-
-    checkState :: CellState -> Cell -> Bool -> Int
-    checkState _ _ False = 0
-    checkState state (_, cellState) _
-      | state == cellState = 1
-      | otherwise = 0
+-- | Updates Cell state if it's Untouched
+updateCellIfUntouched :: CellState -> Cell -> Cell
+updateCellIfUntouched newState (value, state)
+  | state == Untouched = (value, newState)
+  | otherwise = (value, state)
 
 -- | Updates board with neighborhood on given position
 updateBoard :: Board -> Position -> Neighborhood -> Board
