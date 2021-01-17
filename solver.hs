@@ -388,7 +388,9 @@ solve board
         newBoardWithEmptyCell = solve (Just boardWithEmptyCell)
 
 main = do
-  puzzle <- readPuzzle "puzzles/lizard.txt"
+  putStrLn "Path to file with puzzle:"
+  path <- getLine
+  puzzle <- readPuzzle path
   let board = createBoard puzzle
       solved = solve (Just board)
   printBoard (fromJust solved)
