@@ -105,6 +105,7 @@ setBoardCell board (y, x) state
     setInRow :: Row -> Row
     setInRow row = take x row ++ ((value, state) : drop (x + 1) row)
 
+-- | Sets state to cell in neighborhood specified by Position
 setNeighborhoodCellState :: Neighborhood -> CellState -> Position -> Neighborhood
 setNeighborhoodCellState (up, center, down) state pos
   | pos == (-1, -1) = ((updateCellState nw, n, ne), center, down)
@@ -123,14 +124,10 @@ setNeighborhoodCellState (up, center, down) state pos
     updateCellState cell = (getCellValue cell, state)
 
 fillNeighborhoodCellStates :: Neighborhood -> CellState -> [Position] -> Neighborhood
-fillNeighborhoodCellStates nbh state = foldl reducer nbh
-  where
-    reducer nbh = setNeighborhoodCellState nbh state
+fillNeighborhoodCellStates nbh state = foldl (\n -> setNeighborhoodCellState n state) nbh
 
 fillBoardCellStates :: Board -> CellState -> [Position] -> Board
-fillBoardCellStates board state = foldl reducer board
-  where
-    reducer board pos = setBoardCell board pos state
+fillBoardCellStates board state = foldl (\b p -> setBoardCell b p state) board
 
 -- | Updates board with new cell state at given position
 neighborhoodOfCell :: Board -> Position -> Neighborhood
@@ -311,9 +308,7 @@ boardValid board = foldl reducer True numberedCells
     reducer True pos = cellValid board pos
 
     cellValid :: Board -> Position -> Bool
-    cellValid board pos = neighborhoodValid n
-      where
-        n = neighborhoodOfCell board pos
+    cellValid board pos = neighborhoodValid (neighborhoodOfCell board pos)
 
 -- | Prints board in pretty way
 printBoard :: Board -> IO ()
