@@ -1,3 +1,4 @@
+-- | Implements solver for Mosaic puzzle (Fill-a-pix)
 module Main where
 
 -- Board coordinate system
@@ -10,33 +11,51 @@ module Main where
 
 -- (y, x)
 
+-- | State of single cell on board. Cell could have determined
+--   state (Empty, Filled), state to be determined (Untouched)
+--   or can be Expanded (that means it is out of board's bounds
+--   and extends real bounds)
 data CellState = Empty | Filled | Untouched | Expanded deriving (Eq, Show)
 
+-- | Position in coordinate system (y, x)
+--   where y is row number and x is column number
 type Position = (Int, Int)
 
+-- | Value of number in Cell. As number in cell is not necessary
+--   Maybe type is used
 type CellValue = Maybe Int
 
+-- | Cell composed of CellValue and CellState
 type Cell = (CellValue, CellState)
 
+-- | Row of Cells
 type Row = [Cell]
 
+-- | Puzzle board. Board is composed of rows of cells
+--   which makes (y, x) coordinate system described in Position
 type Board = [Row]
 
+-- | Tuple of tree elements
 type Triple t = (t, t, t)
 
+-- | 3x3 Board fragment
 type Neighborhood = Triple (Triple Cell)
 
+-- | extracts value from Maybe type. Error of extracting Nothing
 fromJust :: Maybe a -> a
 fromJust Nothing = error "fromJust: Nothing"
 fromJust (Just x) = x
 
+-- | checks is Maybe is Just
 isJust :: Maybe a -> Bool
 isJust (Just a) = True
 isJust Nothing = False
 
+-- | checks is Maybe is Nothing
 isNothing :: Maybe a -> Bool
 isNothing m = not (isJust m)
 
+-- | empty, Untouched cell
 blankCell :: Cell
 blankCell = (Nothing, Untouched)
 
@@ -122,9 +141,13 @@ setNeighborhoodCellStateIfUntouched (up, center, down) state pos
       | getCellState cell == Untouched = (getCellValue cell, state)
       | otherwise = cell
 
+-- | Sets cells at given relative positions (relative to center)
+--   in neighborhood to given state provided current cell state is Untouched
 fillNeighborhoodCellStatesIfUntouched :: Neighborhood -> CellState -> [Position] -> Neighborhood
 fillNeighborhoodCellStatesIfUntouched nbh state = foldl (\n -> setNeighborhoodCellStateIfUntouched n state) nbh
 
+-- | Sets cells at given positions in board to given state
+--   regardless of its previous state
 fillBoardCellStates :: Board -> CellState -> [Position] -> Board
 fillBoardCellStates board state = foldl (\b p -> setBoardCell b p state) board
 
@@ -156,16 +179,16 @@ getNeighborhoodCell (_, _, (_, s, _)) (1, 0) = s
 getNeighborhoodCell (_, _, (_, _, se)) (1, 1) = se
 getNeighborhoodCell nbh _ = error "invalid position"
 
--- | Extracts middle cell in neighbourhood
-getMiddleCell :: Neighborhood -> Cell
-getMiddleCell nbh = getNeighborhoodCell nbh (0, 0)
+-- | Gets middle cell (0,0) in neighborhood
+getNeighborhoodMiddleCell :: Neighborhood -> Cell
+getNeighborhoodMiddleCell nbh = getNeighborhoodCell nbh (0, 0)
 
 -- | Checks if neighborhood is valid
 neighborhoodValid :: Neighborhood -> Bool
 neighborhoodValid nbh =
   middleValue >= filledCellsCount && middleValue <= 9 - emptyCellsCount - expandedCellsCount
   where
-    middleValue = fromJust (getCellValue (getMiddleCell nbh))
+    middleValue = fromJust (getCellValue (getNeighborhoodMiddleCell nbh))
     filledCellsCount = countCellsInNeighborhood Filled nbh
     emptyCellsCount = countCellsInNeighborhood Empty nbh
     expandedCellsCount = countCellsInNeighborhood Expanded nbh
@@ -175,12 +198,16 @@ neighborhoodCompleted :: Neighborhood -> Bool
 neighborhoodCompleted nbh =
   middleValue == filledCellsCount && middleValue == 9 - emptyCellsCount - expandedCellsCount
   where
-    middleValue = fromJust (getCellValue (getMiddleCell nbh))
+    middleValue = fromJust (getCellValue (getNeighborhoodMiddleCell nbh))
     filledCellsCount = countCellsInNeighborhood Filled nbh
     emptyCellsCount = countCellsInNeighborhood Empty nbh
     expandedCellsCount = countCellsInNeighborhood Expanded nbh
 
--- | Finds known patterns and applies solutions to single neighborhood
+-- | Applies legal solutions to neighborhood. Basic solutions checks
+--   if condition given by number in center cell is satisfied and
+--   if so fills all cells accordingly. More advanced solutions are
+--   then applied if possible. Those solutions are based on
+--   checking adjacent cells to center cell.
 processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh
   | cValue == numberOfFilled + numberOfUntouched = fillUntouchedNeighborhoodWithState nbh Filled
@@ -214,7 +241,8 @@ processNeighborhood nbh
             cUntouchedCnt = countInNeighborhoodFiltered nb Untouched possibleCells
             cFilledCnt = countInNeighborhoodFiltered nb Filled possibleCells
 
--- | Counts cells of given state in neighborhood with given positions in list
+-- | Counts cells of given state in given neighborhood cells filtered by
+--   positions (only cells at given positions will be checked)
 countInNeighborhoodFiltered :: Neighborhood -> CellState -> [Position] -> Int
 countInNeighborhoodFiltered nbh state = foldr check 0
   where
@@ -223,6 +251,7 @@ countInNeighborhoodFiltered nbh state = foldr check 0
       | getCellState (getNeighborhoodCell nbh pos) == state = acc + 1
       | otherwise = acc
 
+-- | Converts neighborhood to flat list
 unwrapNeighborhoodFlat :: Neighborhood -> [Cell]
 unwrapNeighborhoodFlat ((nw, n, ne), (w, c, e), (sw, s, se)) = [nw, n, ne, w, c, e, sw, s, se]
 
@@ -269,12 +298,11 @@ updateBoard board (y, x) ((nw, n, ne), (w, c, e), (sw, s, se)) =
     setCellWrapped :: (Position, CellState) -> Board -> Board
     setCellWrapped (pos, state) board = setBoardCell board pos state
 
--- | Processes neighborhood of cell at given position
+-- | Updates board with solved neighborhood of cell at given position
 processCellAtPosition :: Position -> Board -> Board
-processCellAtPosition pos board = resultBoard
+processCellAtPosition pos board = updateBoard board pos (processNeighborhood neighborhood)
   where
     neighborhood = neighborhoodOfCell board pos
-    resultBoard = updateBoard board pos (processNeighborhood neighborhood)
 
 -- | Finds cells with numbers on board
 findNumberedCells :: Board -> [Position]
@@ -344,7 +372,7 @@ printBoard = mapM_ printRow
     toChar (_, Empty) = '_'
     toChar (_, Expanded) = '-'
 
--- | Finds position of any untouched cell
+-- | Returns position of any unchecked position if exists
 findAnyUncheckedCell :: Board -> Maybe Position
 findAnyUncheckedCell board = find board 0
   where
@@ -360,11 +388,15 @@ findAnyUncheckedCell board = find board 0
       | getCellState cell == Untouched = Just x
       | otherwise = getIndexInRow rest (x + 1)
 
--- | Checks if neighborhood of cell at given position is completed
+-- | Checks if cell at given position is completed
+--  (if there are no Untouched cells in that cell neighborhood)
 cellCompleted :: Board -> Position -> Bool
 cellCompleted board pos = neighborhoodCompleted (neighborhoodOfCell board pos)
 
--- | Finds known patterns and applies solutions to edge cases
+-- | Solves board for "edge cases". Those are cases where two same values
+--   are on board's edge. That requires information about position
+--   relative to bounds and can be done only once therefore it is
+--   not implemented in processNeighborhood function
 solveEdgeCases :: Board -> Board
 solveEdgeCases board = foldr solveCase board niceCells
   where
@@ -411,13 +443,18 @@ solveEdgeCases board = foldr solveCase board niceCells
             fillBoardCellStates b Empty [(y - 1, x - 1), (y, x - 1), (y + 1, x - 1)]
           | otherwise = b
 
+-- | Solves given board. Wraps solve function with calculated
+--   numbered cells list and pretreated Board (with solved edge cases)
 solveBoard :: Board -> Maybe Board
 solveBoard board = solve (Just pretreatedBoard) niceCells
   where
     pretreatedBoard = solveEdgeCases board
     niceCells = findNumberedCells pretreatedBoard
 
--- | Solves board
+-- | Core solver function. Uses backtracking to solve given board.
+--   If no result could be found by known methods new possible solution
+--   is generated by filling or emptying first Untouched cell on Board.
+--   One of those solutions must be valid and be used in further calculations.
 solve :: Maybe Board -> [Position] -> Maybe Board
 solve board niceCells
   | isNothing board = Nothing
@@ -426,10 +463,7 @@ solve board niceCells
   | newBoard == fromJust board = tryUncheckedCell newBoard
   | otherwise = solve (Just newBoard) newNiceCells
   where
-    step :: Board -> Board
-    step board = foldr processCellAtPosition board niceCells
-
-    newBoard = step (fromJust board)
+    newBoard = foldr processCellAtPosition (fromJust board) niceCells
     newNiceCells = filter (not . cellCompleted newBoard) niceCells
     newBoardCompleted = null newNiceCells
 
