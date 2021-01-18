@@ -1,8 +1,7 @@
 module Main where
 
--- Coordinate system
+-- Board coordinate system
 -- 0--------- x
-
 -- |
 -- |
 -- |
@@ -49,7 +48,7 @@ getCellState (_, state) = state
 getCellValue :: Cell -> Maybe Int
 getCellValue (value, _) = value
 
--- | Returns a triple constructed by applying a function to all items in a triple
+-- | Applies function to each element of Triple
 mapTriple :: (a -> b) -> Triple a -> Triple b
 mapTriple f (a1, a2, a3) = (f a1, f a2, f a3)
 
@@ -144,6 +143,7 @@ neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
     s = boardCell (y + 1, x)
     se = boardCell (y + 1, x + 1)
 
+-- | Extracts cell in neighbourhood with given relative position
 getNeighborhoodCell :: Neighborhood -> Position -> Cell
 getNeighborhoodCell ((nw, _, _), _, _) (-1, -1) = nw
 getNeighborhoodCell ((_, n, _), _, _) (-1, 0) = n
@@ -156,10 +156,11 @@ getNeighborhoodCell (_, _, (_, s, _)) (1, 0) = s
 getNeighborhoodCell (_, _, (_, _, se)) (1, 1) = se
 getNeighborhoodCell nbh _ = error "invalid position"
 
+-- | Extracts middle cell in neighbourhood
 getMiddleCell :: Neighborhood -> Cell
 getMiddleCell nbh = getNeighborhoodCell nbh (0, 0)
 
--- | Returns if neighborhood is valid
+-- | Checks if neighborhood is valid
 neighborhoodValid :: Neighborhood -> Bool
 neighborhoodValid nbh =
   middleValue >= filledCellsCount && middleValue <= 9 - emptyCellsCount - expandedCellsCount
@@ -169,7 +170,7 @@ neighborhoodValid nbh =
     emptyCellsCount = countCellsInNeighborhood Empty nbh
     expandedCellsCount = countCellsInNeighborhood Expanded nbh
 
--- | Returns if neighborhood is valid
+-- | Checks if neighborhood is completed
 neighborhoodCompleted :: Neighborhood -> Bool
 neighborhoodCompleted nbh =
   middleValue == filledCellsCount && middleValue == 9 - emptyCellsCount - expandedCellsCount
@@ -179,7 +180,7 @@ neighborhoodCompleted nbh =
     emptyCellsCount = countCellsInNeighborhood Empty nbh
     expandedCellsCount = countCellsInNeighborhood Expanded nbh
 
--- | Solves single neighborhood
+-- | Finds known patterns and applies solutions to single neighborhood
 processNeighborhood :: Neighborhood -> Neighborhood
 processNeighborhood nbh
   | cValue == numberOfFilled + numberOfUntouched = fillUntouchedNeighborhoodWithState nbh Filled
@@ -213,6 +214,7 @@ processNeighborhood nbh
             cUntouchedCnt = countInNeighborhoodFiltered nb Untouched possibleCells
             cFilledCnt = countInNeighborhoodFiltered nb Filled possibleCells
 
+-- | Counts cells of given state in neighborhood with given positions in list
 countInNeighborhoodFiltered :: Neighborhood -> CellState -> [Position] -> Int
 countInNeighborhoodFiltered nbh state = foldr check 0
   where
@@ -224,7 +226,7 @@ countInNeighborhoodFiltered nbh state = foldr check 0
 unwrapNeighborhoodFlat :: Neighborhood -> [Cell]
 unwrapNeighborhoodFlat ((nw, n, ne), (w, c, e), (sw, s, se)) = [nw, n, ne, w, c, e, sw, s, se]
 
--- | Returns a count of cells with given state in neighborhood
+-- | Counts cells of given state in neighborhood
 countCellsInNeighborhood :: CellState -> Neighborhood -> Int
 countCellsInNeighborhood state nbh = countCellsInList state listOfCells
   where
@@ -236,7 +238,7 @@ countCellsInNeighborhood state nbh = countCellsInList state listOfCells
       | state == cellState = 1 + countCellsInList cellState rest
       | otherwise = countCellsInList cellState rest
 
--- | Returns a neighborhood with changed state of all untouched cells
+-- | Updates state of all untouched cells in neighborhood
 fillUntouchedNeighborhoodWithState :: Neighborhood -> CellState -> Neighborhood
 fillUntouchedNeighborhoodWithState nbh newState =
   mapTriple (mapTriple (updateCellIfUntouched newState)) nbh
@@ -267,6 +269,7 @@ updateBoard board (y, x) ((nw, n, ne), (w, c, e), (sw, s, se)) =
     setCellWrapped :: (Position, CellState) -> Board -> Board
     setCellWrapped (pos, state) board = setBoardCell board pos state
 
+-- | Processes neighborhood of cell at given position
 processCellAtPosition :: Position -> Board -> Board
 processCellAtPosition pos board = resultBoard
   where
@@ -315,7 +318,7 @@ boardsEqual bA bB = cntA == cntB
     cntA = countFilledCells bA
     cntB = countFilledCells bB
 
--- | Checks board is valid
+-- | Checks if board is valid
 boardValid :: Board -> Bool
 boardValid board = foldl reducer True numberedCells
   where
@@ -341,7 +344,7 @@ printBoard = mapM_ printRow
     toChar (_, Empty) = '_'
     toChar (_, Expanded) = '-'
 
--- | returns position of any unchecked position if exists
+-- | Finds position of any untouched cell
 findAnyUncheckedCell :: Board -> Maybe Position
 findAnyUncheckedCell board = find board 0
   where
@@ -357,9 +360,11 @@ findAnyUncheckedCell board = find board 0
       | getCellState cell == Untouched = Just x
       | otherwise = getIndexInRow rest (x + 1)
 
+-- | Checks if neighborhood of cell at given position is completed
 cellCompleted :: Board -> Position -> Bool
 cellCompleted board pos = neighborhoodCompleted (neighborhoodOfCell board pos)
 
+-- | Finds known patterns and applies solutions to edge cases
 solveEdgeCases :: Board -> Board
 solveEdgeCases board = foldr solveCase board niceCells
   where
