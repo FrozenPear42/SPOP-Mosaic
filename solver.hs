@@ -10,9 +10,10 @@ module Main where
 -- y
 
 -- (y, x)
-type Position = (Int, Int)
 
 data CellState = Empty | Filled | Untouched | Expanded deriving (Eq, Show)
+
+type Position = (Int, Int)
 
 type CellValue = Maybe Int
 
@@ -29,7 +30,7 @@ type Neighborhood = Triple (Triple Cell)
 type Filter = Triple (Triple Bool)
 
 fromJust :: Maybe a -> a
-fromJust Nothing = error "Maybe.fromJust: Nothing"
+fromJust Nothing = error "fromJust: Nothing"
 fromJust (Just x) = x
 
 isJust :: Maybe a -> Bool
@@ -148,6 +149,16 @@ getMiddleCell (_, (_, c, _), _) = c
 neighborhoodValid :: Neighborhood -> Bool
 neighborhoodValid nbh =
   middleValue >= filledCellsCount && middleValue <= 9 - emptyCellsCount - expandedCellsCount
+  where
+    middleValue = fromJust (getCellValue (getMiddleCell nbh))
+    filledCellsCount = countCellsInNeighborhood Filled nbh
+    emptyCellsCount = countCellsInNeighborhood Empty nbh
+    expandedCellsCount = countCellsInNeighborhood Expanded nbh
+
+-- | Returns if neighborhood is valid
+neighborhoodCompleted :: Neighborhood -> Bool
+neighborhoodCompleted nbh =
+  middleValue == filledCellsCount && middleValue == 9 - emptyCellsCount - expandedCellsCount
   where
     middleValue = fromJust (getCellValue (getMiddleCell nbh))
     filledCellsCount = countCellsInNeighborhood Filled nbh
@@ -293,14 +304,11 @@ boardValid board = foldl reducer True numberedCells
     reducer :: Bool -> Position -> Bool
     reducer False pos = False
     reducer True pos = cellValid board pos
+
     cellValid :: Board -> Position -> Bool
     cellValid board pos = neighborhoodValid n
       where
         n = neighborhoodOfCell board pos
-
--- | Checks if board is complete (board is solved)
-boardCompleted :: Board -> Bool
-boardCompleted board = countUntouchedCells board == 0
 
 -- | Prints board in pretty way
 printBoard :: Board -> IO ()
@@ -331,21 +339,29 @@ findAnyUncheckedCell board = find board 0
       | getCellState cell == Untouched = Just x
       | otherwise = getIndexInRow rest (x + 1)
 
+cellCompleted :: Board -> Position -> Bool
+cellCompleted board pos = neighborhoodCompleted (neighborhoodOfCell board pos)
+
+solveBoard :: Board -> Maybe Board
+solveBoard board = solve (Just board) niceCells
+  where
+    niceCells = findNumberedCells board
+
 -- | Solves board
-solve :: Maybe Board -> Maybe Board
-solve board
+solve :: Maybe Board -> [Position] -> Maybe Board
+solve board niceCells
   | isNothing board = Nothing
   | not (boardValid newBoard) = Nothing
-  | boardCompleted newBoard = Just newBoard
+  | newBoardCompleted = Just newBoard
   | newBoard == fromJust board = tryUncheckedCell newBoard
-  | otherwise = solve (Just newBoard)
+  | otherwise = solve (Just newBoard) newNiceCells
   where
     step :: Board -> Board
     step board = foldr processCellAtPosition board niceCells
-      where
-        niceCells = findNumberedCells board
 
     newBoard = step (fromJust board)
+    newNiceCells = filter (not . cellCompleted newBoard) niceCells
+    newBoardCompleted = null newNiceCells
 
     tryUncheckedCell :: Board -> Maybe Board
     tryUncheckedCell board
@@ -356,13 +372,14 @@ solve board
         boardWithFilledCell = setBoardCell board uncheckedCell Filled
         boardWithEmptyCell = setBoardCell board uncheckedCell Empty
 
-        newBoardWithFilledCell = solve (Just boardWithFilledCell)
-        newBoardWithEmptyCell = solve (Just boardWithEmptyCell)
+        newBoardWithFilledCell = solve (Just boardWithFilledCell) newNiceCells
+        newBoardWithEmptyCell = solve (Just boardWithEmptyCell) newNiceCells
 
 main = do
   putStrLn "Path to file with puzzle:"
   path <- getLine
   puzzle <- readPuzzle path
   let board = createBoard puzzle
-      solved = solve (Just board)
-  printBoard (fromJust solved)
+  printBoard board
+  putStrLn "solving board..."
+  printBoard (fromJust (solveBoard board))
