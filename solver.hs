@@ -27,8 +27,6 @@ type Triple t = (t, t, t)
 
 type Neighborhood = Triple (Triple Cell)
 
-type Filter = Triple (Triple Bool)
-
 fromJust :: Maybe a -> a
 fromJust Nothing = error "fromJust: Nothing"
 fromJust (Just x) = x
@@ -106,8 +104,8 @@ setBoardCell board (y, x) state
     setInRow row = take x row ++ ((value, state) : drop (x + 1) row)
 
 -- | Sets state to cell in neighborhood specified by Position
-setNeighborhoodCellState :: Neighborhood -> CellState -> Position -> Neighborhood
-setNeighborhoodCellState (up, center, down) state pos
+setNeighborhoodCellStateIfUntouched :: Neighborhood -> CellState -> Position -> Neighborhood
+setNeighborhoodCellStateIfUntouched (up, center, down) state pos
   | pos == (-1, -1) = ((updateCellState nw, n, ne), center, down)
   | pos == (-1, 0) = ((nw, updateCellState n, ne), center, down)
   | pos == (-1, 1) = ((nw, n, updateCellState ne), center, down)
@@ -121,10 +119,12 @@ setNeighborhoodCellState (up, center, down) state pos
   where
     ((nw, n, ne), (w, c, e), (sw, s, se)) = (up, center, down)
     updateCellState :: Cell -> Cell
-    updateCellState cell = (getCellValue cell, state)
+    updateCellState cell
+      | getCellState cell == Untouched = (getCellValue cell, state)
+      | otherwise = cell
 
-fillNeighborhoodCellStates :: Neighborhood -> CellState -> [Position] -> Neighborhood
-fillNeighborhoodCellStates nbh state = foldl (\n -> setNeighborhoodCellState n state) nbh
+fillNeighborhoodCellStatesIfUntouched :: Neighborhood -> CellState -> [Position] -> Neighborhood
+fillNeighborhoodCellStatesIfUntouched nbh state = foldl (\n -> setNeighborhoodCellStateIfUntouched n state) nbh
 
 fillBoardCellStates :: Board -> CellState -> [Position] -> Board
 fillBoardCellStates board state = foldl (\b p -> setBoardCell b p state) board
@@ -144,8 +144,20 @@ neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
     s = boardCell (y + 1, x)
     se = boardCell (y + 1, x + 1)
 
+getNeighborhoodCell :: Neighborhood -> Position -> Cell
+getNeighborhoodCell ((nw, _, _), _, _) (-1, -1) = nw
+getNeighborhoodCell ((_, n, _), _, _) (-1, 0) = n
+getNeighborhoodCell ((_, _, ne), _, _) (-1, 1) = ne
+getNeighborhoodCell (_, (w, _, _), _) (0, -1) = w
+getNeighborhoodCell (_, (_, c, _), _) (0, 0) = c
+getNeighborhoodCell (_, (_, _, e), _) (0, 1) = e
+getNeighborhoodCell (_, _, (sw, _, _)) (1, -1) = sw
+getNeighborhoodCell (_, _, (_, s, _)) (1, 0) = s
+getNeighborhoodCell (_, _, (_, _, se)) (1, 1) = se
+getNeighborhoodCell nbh _ = error "invalid position"
+
 getMiddleCell :: Neighborhood -> Cell
-getMiddleCell (_, (_, c, _), _) = c
+getMiddleCell nbh = getNeighborhoodCell nbh (0, 0)
 
 -- | Returns if neighborhood is valid
 neighborhoodValid :: Neighborhood -> Bool
@@ -182,26 +194,32 @@ processNeighborhood nbh
     applyKnownSolutions :: Neighborhood -> Neighborhood
     applyKnownSolutions nbh = foldr ($) nbh solutions
       where
-        solutions = [diff3east, diff3west, diff3north, diff3south]
+        solutions = [adjNW, adjN, adjNE, adjW, adjE, adjSW, adjS, adjSE]
+        adjNW nb = adjXCase nb cValue (getCellValue nw) [(1, -1), (1, 0), (1, 1), (-1, 1), (0, 1)]
+        adjN nb = adjXCase nb cValue (getCellValue n) [(1, -1), (1, 0), (1, 1)]
+        adjNE nb = adjXCase nb cValue (getCellValue ne) [(1, -1), (1, 0), (1, 1), (-1, -1), (0, -1)]
+        adjW nb = adjXCase nb cValue (getCellValue w) [(-1, 1), (0, 1), (1, 1)]
+        adjE nb = adjXCase nb cValue (getCellValue e) [(-1, -1), (0, -1), (1, -1)]
+        adjSW nb = adjXCase nb cValue (getCellValue sw) [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1)]
+        adjS nb = adjXCase nb cValue (getCellValue s) [(-1, -1), (-1, 0), (-1, 1)]
+        adjSE nb = adjXCase nb cValue (getCellValue se) [(-1, -1), (-1, 0), (-1, 1), (0, -1), (1, -1)]
 
-        diff3west nbh = diff3x nbh (getCellValue w) [(-1, 1), (0, 1), (1, 1)]
+        adjXCase :: Neighborhood -> Int -> CellValue -> [Position] -> Neighborhood
+        adjXCase nb cV xV possibleCells
+          | isJust xV && cV == fromJust xV + cUntouchedCnt + cFilledCnt =
+            fillNeighborhoodCellStatesIfUntouched nb Filled possibleCells
+          | otherwise = nb
           where
-            (_, (w, _, _), _) = nbh
-        diff3east nbh = diff3x nbh (getCellValue e) [(-1, -1), (0, -1), (1, -1)]
-          where
-            (_, (_, _, e), _) = nbh
-        diff3north nbh = diff3x nbh (getCellValue n) [(1, -1), (1, 0), (1, 1)]
-          where
-            ((_, n, _), _, _) = nbh
-        diff3south nbh = diff3x nbh (getCellValue s) [(-1, -1), (-1, 0), (-1, 1)]
-          where
-            (_, _, (_, s, _)) = nbh
+            cUntouchedCnt = countInNeighborhoodFiltered nb Untouched possibleCells
+            cFilledCnt = countInNeighborhoodFiltered nb Filled possibleCells
 
-        diff3x :: Neighborhood -> CellValue -> [Position] -> Neighborhood
-        diff3x nbh cellValue positions
-          | isJust cellValue && cValue - fromJust cellValue >= 3 =
-            fillNeighborhoodCellStates nbh Filled positions
-          | otherwise = nbh
+countInNeighborhoodFiltered :: Neighborhood -> CellState -> [Position] -> Int
+countInNeighborhoodFiltered nbh state = foldr check 0
+  where
+    check :: Position -> Int -> Int
+    check pos acc
+      | getCellState (getNeighborhoodCell nbh pos) == state = acc + 1
+      | otherwise = acc
 
 unwrapNeighborhoodFlat :: Neighborhood -> [Cell]
 unwrapNeighborhoodFlat ((nw, n, ne), (w, c, e), (sw, s, se)) = [nw, n, ne, w, c, e, sw, s, se]
@@ -429,4 +447,8 @@ main = do
   let board = createBoard puzzle
   printBoard board
   putStrLn "solving board..."
-  printBoard (fromJust (solveBoard board))
+  let solved = solveBoard board
+      output
+        | isJust solved = printBoard (fromJust solved)
+        | otherwise = putStrLn "could not solve"
+  output
