@@ -127,6 +127,11 @@ fillNeighborhoodCellStates nbh state = foldl reducer nbh
   where
     reducer nbh = setNeighborhoodCellState nbh state
 
+fillBoardCellStates :: Board -> CellState -> [Position] -> Board
+fillBoardCellStates board state = foldl reducer board
+  where
+    reducer board pos = setBoardCell board pos state
+
 -- | Updates board with new cell state at given position
 neighborhoodOfCell :: Board -> Position -> Neighborhood
 neighborhoodOfCell board (y, x) = ((nw, n, ne), (w, c, e), (sw, s, se))
@@ -342,10 +347,57 @@ findAnyUncheckedCell board = find board 0
 cellCompleted :: Board -> Position -> Bool
 cellCompleted board pos = neighborhoodCompleted (neighborhoodOfCell board pos)
 
-solveBoard :: Board -> Maybe Board
-solveBoard board = solve (Just board) niceCells
+solveEdgeCases :: Board -> Board
+solveEdgeCases board = foldr solveCase board niceCells
   where
     niceCells = findNumberedCells board
+    width = length (head board)
+    height = length board
+
+    solveCase :: Position -> Board -> Board
+    solveCase (y, x) brd = foldr ($) brd solutions
+      where
+        centerCellValue = getCellValue (getCell brd (y, x))
+        nCellValue = getCellValue (getCell brd (y -1, x))
+        sCellValue = getCellValue (getCell brd (y + 1, x))
+        wCellValue = getCellValue (getCell brd (y, x -1))
+        eCellValue = getCellValue (getCell brd (y, x + 1))
+
+        solutions = [nSolution, sSolution, eSolution, wSolution]
+
+        nSolution b
+          | y == 1
+              && isJust nCellValue
+              && nCellValue == Just (fromJust centerCellValue) =
+            fillBoardCellStates b Empty [(y + 1, x -1), (y + 1, x), (y + 1, x + 1)]
+          | otherwise = b
+
+        sSolution b
+          | y == height - 2
+              && isJust sCellValue
+              && sCellValue == Just (fromJust centerCellValue) =
+            fillBoardCellStates b Empty [(y - 1, x -1), (y - 1, x), (y - 1, x + 1)]
+          | otherwise = b
+
+        wSolution b
+          | x == 1
+              && isJust wCellValue
+              && wCellValue == Just (fromJust centerCellValue) =
+            fillBoardCellStates b Empty [(y - 1, x + 1), (y, x + 1), (y + 1, x + 1)]
+          | otherwise = b
+
+        eSolution b
+          | x == width - 2
+              && isJust eCellValue
+              && eCellValue == Just (fromJust centerCellValue) =
+            fillBoardCellStates b Empty [(y - 1, x - 1), (y, x - 1), (y + 1, x - 1)]
+          | otherwise = b
+
+solveBoard :: Board -> Maybe Board
+solveBoard board = solve (Just pretreatedBoard) niceCells
+  where
+    pretreatedBoard = solveEdgeCases board
+    niceCells = findNumberedCells pretreatedBoard
 
 -- | Solves board
 solve :: Maybe Board -> [Position] -> Maybe Board
